@@ -30,21 +30,31 @@ enum Command {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::AlbumCleanup { dry_run, artist_id, force } => {
-            println!("{}", serde_json::to_string_pretty(&json!({
-                "command": "album-cleanup",
-                "dryRun": dry_run,
-                "artistId": artist_id,
-                "force": force,
-                "status": "scaffold"
-            }))?);
+        Command::AlbumCleanup {
+            dry_run,
+            artist_id,
+            force,
+        } => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "command": "album-cleanup",
+                    "dryRun": dry_run,
+                    "artistId": artist_id,
+                    "force": force,
+                    "status": "scaffold"
+                }))?
+            );
         }
         Command::DiskCleanup { dry_run } => {
-            println!("{}", serde_json::to_string_pretty(&json!({
-                "command": "disk-cleanup",
-                "dryRun": dry_run,
-                "status": "scaffold"
-            }))?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "command": "disk-cleanup",
+                    "dryRun": dry_run,
+                    "status": "scaffold"
+                }))?
+            );
         }
     }
     Ok(())
