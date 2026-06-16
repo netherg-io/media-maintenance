@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::{env, path::PathBuf, str::FromStr};
+
+use anyhow::{Context, Result};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -9,19 +11,31 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> anyhow::Result<Self> {
+    pub fn from_env() -> Result<Self> {
         Ok(Self {
-            lidarr_base_url: std::env::var("LIDARR_BASE_URL").unwrap_or_else(|_| String::from("http://lidarr:8686/api/v1")),
-            lidarr_header_value: std::env::var("LIDARR_HEADER_VALUE").unwrap_or_default(),
-            cache_db: PathBuf::from(std::env::var("CACHE_DB").unwrap_or_else(|_| String::from("/data/media-maintenance.sqlite"))),
-            report_dir: PathBuf::from(std::env::var("REPORT_DIR").unwrap_or_else(|_| String::from("/data/reports"))),
+            lidarr_base_url: env_required("LIDARR_BASE_URL")?
+                .trim_end_matches('/')
+                .to_string(),
+            lidarr_header_value: env_required("LIDARR_HEADER_VALUE")?,
+            cache_db: PathBuf::from(env_parse(
+                "CACHE_DB",
+                String::from("/data/media-maintenance.sqlite"),
+            )),
+            report_dir: PathBuf::from(env_parse("REPORT_DIR", String::from("/data/reports"))),
         })
     }
 }
 
+pub fn env_required(name: &str) -> Result<String> {
+    env::var(name).with_context(|| format!("missing required env {name}"))
+}
+
 pub fn env_parse<T>(name: &str, default: T) -> T
 where
-    T: std::str::FromStr,
+    T: FromStr,
 {
-    std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(default)
+    env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }
