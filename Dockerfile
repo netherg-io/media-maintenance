@@ -1,8 +1,8 @@
 FROM rust:1-bookworm AS builder
 WORKDIR /app
-COPY Cargo.toml Cargo.lock README.md LICENSE ./
+COPY Cargo.toml README.md LICENSE ./
 COPY src ./src
-RUN cargo build --locked --release
+RUN cargo build --release
 
 FROM debian:bookworm-slim
 COPY --from=builder /app/target/release/media-maintenance /usr/local/bin/media-maintenance
