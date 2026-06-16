@@ -18,4 +18,13 @@ Schedules:
 0 4 * * 0    media-maintenance disk-cleanup
 ```
 
+Recommended first-run commands:
+
+```bash
+media-maintenance album-cleanup --dry-run
+media-maintenance disk-cleanup --dry-run
+```
+
+After reviewing JSON reports in `REPORT_DIR`, enable apply mode by setting `ALBUM_APPLY=true` and `DISK_DRY_RUN=false`.
+
 Do not schedule both jobs at the same time.
