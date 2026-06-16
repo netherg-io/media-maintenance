@@ -1,9 +1,14 @@
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use anyhow::Result;
-use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use serde::{Deserialize, Serialize};
+use tokio::{fs, sync::Mutex};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArtistCache {
     pub artist_id: i64,
     pub fingerprint: String,
@@ -13,66 +18,58 @@ pub struct ArtistCache {
 
 #[derive(Clone)]
 pub struct Store {
-    pool: SqlitePool,
+    path: PathBuf,
+    lock: Arc<Mutex<()>>,
 }
 
 impl Store {
     pub async fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            fs::create_dir_all(parent).await?;
         }
-        let pool = SqlitePoolOptions::new()
-            .max_connections(5)
-            .connect(&format!("sqlite://{}?mode=rwc", path.display()))
-            .await?;
-        let store = Self { pool };
-        store.migrate().await?;
+        let store = Self {
+            path: path.to_path_buf(),
+            lock: Arc::new(Mutex::new(())),
+        };
+        if !store.path.exists() {
+            store.write_all(&HashMap::new()).await?;
+        }
         Ok(store)
     }
 
-    async fn migrate(&self) -> Result<()> {
-        sqlx::query(
-            "create table if not exists artist_cache(
-                artist_id integer primary key,
-                fingerprint text not null,
-                processed_at text not null,
-                status text not null
-            )",
-        )
-        .execute(&self.pool)
-        .await?;
-        Ok(())
-    }
-
     pub async fn artist_cache(&self) -> Result<HashMap<i64, ArtistCache>> {
-        let rows = sqlx::query_as::<_, (i64, String, String, String)>(
-            "select artist_id, fingerprint, processed_at, status from artist_cache",
-        )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|(artist_id, fingerprint, processed_at, status)| {
-                (artist_id, ArtistCache { artist_id, fingerprint, processed_at, status })
-            })
-            .collect())
+        self.read_all().await
     }
 
     pub async fn upsert_artist(&self, row: &ArtistCache) -> Result<()> {
-        sqlx::query(
-            "insert into artist_cache(artist_id, fingerprint, processed_at, status)
-             values (?, ?, ?, ?)
-             on conflict(artist_id) do update set
-             fingerprint=excluded.fingerprint,
-             processed_at=excluded.processed_at,
-             status=excluded.status",
-        )
-        .bind(row.artist_id)
-        .bind(&row.fingerprint)
-        .bind(&row.processed_at)
-        .bind(&row.status)
-        .execute(&self.pool)
-        .await?;
+        let _guard = self.lock.lock().await;
+        let mut rows = self.read_all_unlocked().await?;
+        rows.insert(row.artist_id, row.clone());
+        self.write_all_unlocked(&rows).await
+    }
+
+    async fn read_all(&self) -> Result<HashMap<i64, ArtistCache>> {
+        let _guard = self.lock.lock().await;
+        self.read_all_unlocked().await
+    }
+
+    async fn read_all_unlocked(&self) -> Result<HashMap<i64, ArtistCache>> {
+        let data = fs::read(&self.path).await.unwrap_or_default();
+        if data.is_empty() {
+            return Ok(HashMap::new());
+        }
+        Ok(serde_json::from_slice(&data)?)
+    }
+
+    async fn write_all(&self, rows: &HashMap<i64, ArtistCache>) -> Result<()> {
+        let _guard = self.lock.lock().await;
+        self.write_all_unlocked(rows).await
+    }
+
+    async fn write_all_unlocked(&self, rows: &HashMap<i64, ArtistCache>) -> Result<()> {
+        let tmp = self.path.with_extension("tmp");
+        fs::write(&tmp, serde_json::to_vec_pretty(rows)?).await?;
+        fs::rename(tmp, &self.path).await?;
         Ok(())
     }
 }
