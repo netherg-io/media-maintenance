@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 publish = false
+autobins = false
+
+[[bin]]
+name = "media-maintenance"
+path = "src/bin/media-maintenance.rs"
 
 [dependencies]
 anyhow = "1"
