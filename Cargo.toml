@@ -3,6 +3,11 @@ name = "media-maintenance"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+description = "Container-friendly Rust CLI for scheduled Lidarr maintenance jobs."
+repository = "https://github.com/netherg-io/media-maintenance"
+readme = "README.md"
+keywords = ["lidarr", "media", "maintenance", "cli"]
+categories = ["command-line-utilities"]
 publish = false
 autobins = false
 
