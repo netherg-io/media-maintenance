@@ -48,15 +48,21 @@ docker run --rm --name media-maintenance-disk --user 1000:1000 \
   --mount type=bind,src=/home/nether/media-maintenance/maintenance.env,dst=/run/maintenance.env,readonly \
   --mount type=bind,src=/srv/media,dst=/media \
   --mount type=bind,src=/home/nether/media-maintenance/data,dst=/data \
-  -e DISK_DRY_RUN=false \
+  -e DISK_DRY_RUN=false -e DISK_MAX_FILES=1000 -e DISK_MAX_BYTES=53687091200 \
   "$image" --env-file /run/maintenance.env disk-cleanup || cleanup_status=$?
 scan_status=0
 sleep 6
 waited=0
-while docker top media-navidrome-dux02d-navidrome-1 -eo args | grep -q '^/app/navidrome scan'; do
-  if [ "$waited" -ge 3600 ]; then exit 1; fi
-  sleep 5
-  waited=$((waited + 5))
+while :; do
+  scan_processes=$(docker top media-navidrome-dux02d-navidrome-1 -eo pid,args) || exit 1
+  case "$scan_processes" in
+    *"/app/navidrome scan"*)
+      if [ "$waited" -ge 3600 ]; then exit 1; fi
+      sleep 5
+      waited=$((waited + 5))
+      ;;
+    *) break ;;
+  esac
 done
 docker exec -e ND_SCANNER_PURGEMISSING=always \
   media-navidrome-dux02d-navidrome-1 /app/navidrome scan || scan_status=$?
