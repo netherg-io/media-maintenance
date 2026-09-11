@@ -37,7 +37,6 @@
 | `DISK_MAX_FILES` | `100` | Maximum files moved in one run. |
 | `DISK_MAX_BYTES` | `26843545600` | Maximum bytes moved in one run. |
 | `DISK_SCAN_CONCURRENCY` | `16` | Filesystem/API scan concurrency. |
-| `DISK_MOVE_CONCURRENCY` | `2` | Move concurrency in apply mode. |
 
 ## Command-line flags
 
@@ -48,3 +47,37 @@ media-maintenance disk-cleanup --dry-run
 ```
 
 CLI flags override runtime behaviour for the current run only. Environment variables are still the recommended configuration surface for scheduled jobs.
+
+## Audio Integrity and quarantine
+
+Set `AUDIO_INTEGRITY_URL` and `AUDIO_INTEGRITY_TOKEN` (the service's dedicated
+`API_TOKEN`) to enable corruption/authenticity cleanup. An incremental scan runs
+first by default (`AUDIO_INTEGRITY_SCAN=true`); an existing scan is reused and
+must finish successfully. `AUDIO_INTEGRITY_TIMEOUT_SECONDS` defaults to 21600.
+`AUDIO_INTEGRITY_MUSIC_ROOT` defaults to `/music` and maps the service's paths to
+`DISK_MUSIC_ROOT`. Only current validator results matching file size and exact
+nanosecond modification time are used. `corrupt` and healthy `likely_lossy`
+results qualify; validation errors never qualify as corruption. The existing
+stale-age and run limits still apply. Lossy authenticity is a heuristic.
+
+Untracked files are report-only unless `DISK_CLEAN_UNTRACKED=true`; this avoids
+moving a file solely because Lidarr does not know it. When enabled, manual-import
+API failures abort the run. Known files on unmonitored albums retain their
+existing cleanup behavior. Moves are serialized with a journal saved before
+moving and after every outcome; the previous move-concurrency setting is no
+longer used. Files changed during the run are preserved.
+
+`quarantine-cleanup` removes only unchanged, successfully quarantined files
+recorded in `moves.json` whose `quarantined_at` timestamp is at least 30 days old.
+`quarantine-cleanup --dry-run` previews expiration. Manifests and unrelated files
+are retained. Older manifests without a transfer timestamp are never auto-purged.
+Disk and quarantine commands share a filesystem lock under `REPORT_DIR`.
+
+Use the global `--env-file /run/maintenance.env` option to read a mounted secret
+file. Container environment variables take precedence over this file.
+
+Optional `NAVIDROME_URL`, `NAVIDROME_USER`, and `NAVIDROME_PASSWORD` enable a full
+Subsonic rescan after any successful move. This requires an administrator account;
+HTTP and Subsonic errors are recorded and cause a nonzero exit after the report
+is saved. Scans are polled for completion for up to one hour. A Dokploy schedule
+may instead run Navidrome's CLI inside its existing container.

@@ -28,3 +28,42 @@ media-maintenance disk-cleanup --dry-run
 After reviewing JSON reports in `REPORT_DIR`, enable apply mode by setting `ALBUM_APPLY=true` and `DISK_DRY_RUN=false`.
 
 Do not schedule both jobs at the same time.
+
+## Homeserver schedules using docker run
+
+The environment file lives on the Docker host at
+`/home/nether/media-maintenance/maintenance.env` (mode 0600). Mount it read-only
+and pass `--env-file` to the binary: Dokploy's own container does not need to
+read the host file. Mount `/srv/media` at `/media` and the host data directory at
+`/data`; run as UID/GID 1000 to match media ownership. Use an immutable image tag.
+
+Disk cleanup schedule (daily, 03:00 Europe/Kyiv):
+
+```sh
+set -u
+image=ghcr.io/netherg-io/media-maintenance:REPLACE_WITH_COMMIT
+cleanup_status=0
+docker run --rm --name media-maintenance-disk --user 1000:1000 \
+  --network dokploy-network \
+  --mount type=bind,src=/home/nether/media-maintenance/maintenance.env,dst=/run/maintenance.env,readonly \
+  --mount type=bind,src=/srv/media,dst=/media \
+  --mount type=bind,src=/home/nether/media-maintenance/data,dst=/data \
+  -e DISK_DRY_RUN=false \
+  "$image" --env-file /run/maintenance.env disk-cleanup || cleanup_status=$?
+scan_status=0
+docker exec -e ND_SCANNER_PURGEMISSING=full \
+  media-navidrome-dux02d-navidrome-1 /app/navidrome scan --full || scan_status=$?
+[ "$cleanup_status" -eq 0 ] && [ "$scan_status" -eq 0 ]
+```
+
+Rescan runs even after a partial cleanup failure. It uses the existing Navidrome
+container without restarting the service or granting administrator privileges to
+an integration account. Its result is retained in the Dokploy schedule log.
+The optional in-process Subsonic integration is an alternative for installations
+with administrator API credentials.
+
+Quarantine expiration schedule (daily, 12:00 Europe/Kyiv): use the same mounts and
+image, container name `media-maintenance-quarantine`, and command
+`--env-file /run/maintenance.env quarantine-cleanup`. It retains files for 30 days
+from their individual transfer timestamps. Keep reports/manifests for recovery
+and auditing. Both commands refuse concurrent access to the same report volume.
