@@ -51,11 +51,19 @@ docker run --rm --name media-maintenance-disk --user 1000:1000 \
   -e DISK_DRY_RUN=false \
   "$image" --env-file /run/maintenance.env disk-cleanup || cleanup_status=$?
 scan_status=0
+sleep 6
+waited=0
+while docker top media-navidrome-dux02d-navidrome-1 -eo args | grep -q '^/app/navidrome scan'; do
+  if [ "$waited" -ge 3600 ]; then exit 1; fi
+  sleep 5
+  waited=$((waited + 5))
+done
 docker exec -e ND_SCANNER_PURGEMISSING=always \
   media-navidrome-dux02d-navidrome-1 /app/navidrome scan || scan_status=$?
 [ "$cleanup_status" -eq 0 ] && [ "$scan_status" -eq 0 ]
 ```
 
+The schedule waits up to one hour for an existing Navidrome scan to finish.
 The incremental rescan purges missing database records without forcing unchanged
 tracks to be re-read. Rescan runs even after a partial cleanup failure. It uses the existing Navidrome
 container without restarting the service or granting administrator privileges to
