@@ -63,8 +63,8 @@ stale-age and run limits still apply. Lossy authenticity is a heuristic.
 Untracked files are report-only unless `DISK_CLEAN_UNTRACKED=true`; this avoids
 moving a file solely because Lidarr does not know it. When enabled, manual-import
 API failures abort the run. Known files on unmonitored albums retain their
-existing cleanup behavior. Moves are serialized with a journal saved before
-moving and after every outcome; the previous move-concurrency setting is no
+existing cleanup behavior. Moves are serialized with a plan saved before
+moving, an append-only outcome journal synced after each move, and a final snapshot; the previous move-concurrency setting is no
 longer used. Files changed during the run are preserved.
 
 `quarantine-cleanup` removes only unchanged, successfully quarantined files

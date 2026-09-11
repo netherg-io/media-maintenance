@@ -50,10 +50,27 @@ fn cleanup(root: &Path, dry_run: bool, now: chrono::DateTime<chrono::Utc>) -> Re
         if created >= cutoff {
             continue;
         }
-        for record in manifest["records"]
+        let mut records = manifest["records"]
             .as_array()
             .context("missing quarantine records")?
-        {
+            .clone();
+        let outcomes = entry.path().join("outcomes.jsonl");
+        if outcomes.is_file() && !outcomes.symlink_metadata()?.file_type().is_symlink() {
+            let text = std::fs::read_to_string(&outcomes)?;
+            for line in text
+                .split_inclusive('\n')
+                .filter(|line| line.ends_with('\n'))
+            {
+                let record: Value = serde_json::from_str(line)?;
+                if let Some(existing) = records.iter_mut().find(|r| {
+                    r["source_path"] == record["source_path"]
+                        && r["quarantine_path"] == record["quarantine_path"]
+                }) {
+                    *existing = record;
+                }
+            }
+        }
+        for record in &records {
             if record["action"] != "quarantined" {
                 continue;
             }
@@ -123,6 +140,21 @@ mod tests {
         std::fs::write(
             run.join("moves.json"),
             serde_json::to_vec(&json!({"created_at":old,"records":records})).unwrap(),
+        )
+        .unwrap();
+        let mut pending: Value =
+            serde_json::from_slice(&std::fs::read(run.join("moves.json")).unwrap()).unwrap();
+        let mut outcomes = String::new();
+        for record in pending["records"].as_array_mut().unwrap() {
+            outcomes.push_str(&serde_json::to_string(record).unwrap());
+            outcomes.push('\n');
+            record["action"] = json!("pending");
+        }
+        outcomes.push_str("{incomplete final entry");
+        std::fs::write(run.join("outcomes.jsonl"), outcomes).unwrap();
+        std::fs::write(
+            run.join("moves.json"),
+            serde_json::to_vec(&pending).unwrap(),
         )
         .unwrap();
         cleanup(&root, true, now).unwrap();

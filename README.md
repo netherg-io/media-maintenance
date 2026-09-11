@@ -34,6 +34,12 @@ Long-running automation tools are great for orchestration, but large Lidarr libr
   - writes a manifest/report;
   - moves selected stale files into quarantine only when dry-run is disabled.
 
+- **Audio Integrity and retention**
+  - scans through the authenticated Audio Integrity API;
+  - quarantines corrupt audio and likely transcoded FLAC using matching file identities;
+  - expires quarantined files after 30 days with `quarantine-cleanup`;
+  - supports Navidrome rescans through its API or the Dokploy schedule CLI.
+
 - **Ops-friendly runtime**
   - one static command-line entrypoint;
   - Docker/GHCR publishing in CI;

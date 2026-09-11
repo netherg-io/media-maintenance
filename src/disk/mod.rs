@@ -522,6 +522,10 @@ async fn apply_limits(cfg: &DiskConfig, run_id: &str, records: &mut [Record]) ->
             records[idx].action = "pending".into();
         }
         save_moves(&journal, &created_at, records).await?;
+        let mut outcomes = std::fs::OpenOptions::new()
+            .create_new(true)
+            .append(true)
+            .open(journal_dir.join("outcomes.jsonl"))?;
         for idx in selected {
             let rec = &mut records[idx];
             let outcome: Result<()> = async {
@@ -556,8 +560,11 @@ async fn apply_limits(cfg: &DiskConfig, run_id: &str, records: &mut [Record]) ->
                     rec.reason = format!("{}; {e}", rec.reason);
                 }
             }
-            save_moves(&journal, &created_at, records).await?;
+            use std::io::Write;
+            writeln!(&mut outcomes, "{}", serde_json::to_string(&records[idx])?)?;
+            outcomes.sync_data()?;
         }
+        save_moves(&journal, &created_at, records).await?;
     }
     Ok(())
 }

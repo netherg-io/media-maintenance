@@ -37,4 +37,7 @@ Recommended quarantine path:
 
 If a file was moved to quarantine by mistake, move it back from the run-specific quarantine directory listed in the JSON manifest.
 
-Do not delete quarantine contents automatically until you have reviewed at least several successful runs.
+Quarantined audio expires after 30 days from its recorded transfer time when the
+`quarantine-cleanup` schedule runs. Only unchanged files listed as successfully
+quarantined are removed. Reports, manifests and unrelated files are retained.
+Restore a file before its retention period expires if you want to keep it.
