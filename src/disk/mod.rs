@@ -151,7 +151,15 @@ pub async fn run(args: DiskArgs) -> Result<()> {
         &evidence,
     )?;
     records.sort_by(|a, b| a.source_path.cmp(&b.source_path));
-    apply_limits(&cfg, &run_id, &mut records).await?;
+    let move_result = apply_limits(&cfg, &run_id, &mut records).await;
+    crate::refresh::mark_changed(
+        &app.report_dir,
+        &run_id,
+        records
+            .iter()
+            .any(|r| r.action == "quarantined" && r.quarantined_at.is_some()),
+    )?;
+    move_result?;
 
     let affected_artist_paths = records
         .iter()

@@ -135,3 +135,8 @@ cargo build --release
 ## License
 
 MIT
+
+Post-cleanup service refreshes run only after actual library changes. The Dokploy
+wrapper in `scripts/dokploy-refresh.sh` sequences Integrity, fast Navidrome rescan,
+and AudioMuse cleaning/analysis using durable pending markers. See
+[configuration](docs/configuration.md#refresh-after-library-changes).

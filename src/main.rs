@@ -5,6 +5,7 @@ mod integrity;
 mod lidarr;
 mod navidrome;
 mod quarantine;
+mod refresh;
 mod report;
 mod storage;
 
@@ -33,6 +34,10 @@ enum Command {
     Disk(disk::DiskArgs),
     #[command(name = "quarantine-cleanup")]
     Quarantine(quarantine::Args),
+    #[command(name = "refresh-after-cleanup")]
+    Refresh(refresh::RefreshArgs),
+    #[command(name = "integrity-scan")]
+    IntegrityScan,
 }
 
 #[tokio::main]
@@ -42,7 +47,10 @@ async fn main() -> Result<()> {
         dotenvy::from_path(path)?;
     }
     init_tracing(cli.log_json);
-    let _lock = if matches!(cli.command, Command::Disk(_) | Command::Quarantine(_)) {
+    let _lock = if matches!(
+        cli.command,
+        Command::Disk(_) | Command::Quarantine(_) | Command::Refresh(_) | Command::IntegrityScan
+    ) {
         let dir = std::path::PathBuf::from(config::env_parse(
             "REPORT_DIR",
             String::from("/data/reports"),
@@ -63,6 +71,8 @@ async fn main() -> Result<()> {
         Command::Album(args) => album::run(args).await,
         Command::Disk(args) => disk::run(args).await,
         Command::Quarantine(args) => quarantine::run(args).await,
+        Command::Refresh(args) => refresh::run(args).await,
+        Command::IntegrityScan => integrity::scheduled().await,
     }
 }
 

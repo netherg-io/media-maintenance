@@ -23,6 +23,7 @@ jobs:
       - run: cargo check --all-features
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo test --all-features
+      - run: sh tests/refresh-schedule.sh
       - run: cargo build --release
 
   docker:

@@ -82,3 +82,31 @@ Configure Navidrome `Scanner.PurgeMissing=full` or `always` if absent records
 should be removed rather than marked missing. HTTP and Subsonic errors are recorded and cause a nonzero exit after the report
 is saved. Scans are polled for completion for up to one hour. A Dokploy schedule
 may instead run Navidrome's CLI inside its existing container.
+
+## Refresh after library changes
+
+Actual quarantine moves create durable `pending-integrity.json`,
+`pending-navidrome.json`, and `pending-audiomuse.json` markers under `REPORT_DIR`
+for configured integrations. Dry-run and no-op cleanup do not create markers or
+clear pending work from earlier changes.
+
+- `AUDIO_INTEGRITY_URL` enables a post-cleanup incremental scan. It reconciles
+  deleted library results while retaining the verification cache for remaining files.
+- `NAVIDROME_EXTERNAL_RESCAN=true` delegates the fast Navidrome scan to the Dokploy
+  wrapper. AudioMuse waits until it succeeds. Do not combine this with the direct
+  `NAVIDROME_URL` API integration.
+- `AUDIOMUSE_URL` and `AUDIOMUSE_TOKEN` enable authenticated AudioMuse refresh.
+  Cleaning removes absent server mappings and orphaned catalogue entries, then
+  analysis enumerates all albums (`num_recent_albums=0`) while skipping already
+  analyzed tracks. A running main task causes deferral, never cancellation.
+
+`refresh-after-cleanup integrity`, `refresh-after-cleanup navidrome
+--navidrome-scanned`, and `refresh-after-cleanup audiomuse` advance only pending
+work. The Navidrome acknowledgment must follow a successful external scan.
+AudioMuse task IDs persist across invocations, so polling does not enqueue duplicates.
+Completed stages save `refresh-<stage>-<run_id>.json` and remove only their marker.
+Failed stages retain pending work. Retrying AudioMuse checks its saved task first;
+a failed task clears that ID for a later retry without repeating completed cleaning.
+
+`integrity-scan` runs a standalone incremental scan for the daily schedule and
+reuses an already-running scan. It does not trigger Navidrome or AudioMuse.

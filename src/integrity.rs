@@ -27,45 +27,10 @@ pub async fn fetch() -> Result<HashMap<String, Evidence>> {
     let Ok(base) = std::env::var("AUDIO_INTEGRITY_URL") else {
         return Ok(HashMap::new());
     };
-    let mut headers = reqwest::header::HeaderMap::new();
-    let mut token =
-        reqwest::header::HeaderValue::from_str(&env_required("AUDIO_INTEGRITY_TOKEN")?)?;
-    token.set_sensitive(true);
-    headers.insert("x-integrity-token", token);
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .timeout(Duration::from_secs(60))
-        .build()?;
+    let client = client()?;
     let base = base.trim_end_matches('/');
     if env_parse("AUDIO_INTEGRITY_SCAN", true) {
-        let response = client
-            .post(format!("{base}/api/scans"))
-            .json(&serde_json::json!({"mode":"incremental"}))
-            .send()
-            .await?;
-        if response.status() != reqwest::StatusCode::CONFLICT {
-            response.error_for_status()?;
-        }
-        let deadline = tokio::time::Instant::now()
-            + Duration::from_secs(env_parse("AUDIO_INTEGRITY_TIMEOUT_SECONDS", 21600));
-        loop {
-            let status: Value = client
-                .get(format!("{base}/api/status"))
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-            match status["phase"].as_str() {
-                Some("completed") => break,
-                Some("discovering" | "scanning" | "cancelling") => {}
-                _ => bail!("Audio Integrity scan did not complete: {}", status["phase"]),
-            }
-            if tokio::time::Instant::now() >= deadline {
-                bail!("Audio Integrity scan timed out");
-            }
-            tokio::time::sleep(Duration::from_secs(10)).await;
-        }
+        scan(&client, base, None).await?;
     }
     let summary: Value = client
         .get(format!("{base}/api/summary"))
@@ -108,6 +73,80 @@ pub async fn fetch() -> Result<HashMap<String, Evidence>> {
         }
     }
     Ok(result)
+}
+
+fn client() -> Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    let mut token =
+        reqwest::header::HeaderValue::from_str(&env_required("AUDIO_INTEGRITY_TOKEN")?)?;
+    token.set_sensitive(true);
+    headers.insert("x-integrity-token", token);
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .timeout(Duration::from_secs(60))
+        .build()?;
+    Ok(client)
+}
+
+pub async fn scheduled() -> Result<()> {
+    let base = env_required("AUDIO_INTEGRITY_URL")?;
+    let result = scan(&client()?, base.trim_end_matches('/'), None).await?;
+    println!("{result}");
+    Ok(())
+}
+
+pub async fn refresh(changed_at: &str) -> Result<Value> {
+    let base = env_required("AUDIO_INTEGRITY_URL")?;
+    scan(&client()?, base.trim_end_matches('/'), Some(changed_at)).await
+}
+
+async fn scan(client: &reqwest::Client, base: &str, changed_at: Option<&str>) -> Result<Value> {
+    let deadline = tokio::time::Instant::now()
+        + Duration::from_secs(env_parse("AUDIO_INTEGRITY_TIMEOUT_SECONDS", 21600));
+    loop {
+        let response = client
+            .post(format!("{base}/api/scans"))
+            .json(&serde_json::json!({"mode":"incremental"}))
+            .send()
+            .await?;
+        let existing = response.status() == reqwest::StatusCode::CONFLICT;
+        if !existing {
+            response.error_for_status()?;
+        }
+        loop {
+            let status: Value = client
+                .get(format!("{base}/api/status"))
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?;
+            match status["phase"].as_str() {
+                Some("completed") => {
+                    let covers_change = changed_at.is_none_or(|changed| {
+                        status["startedAt"]
+                            .as_str()
+                            .and_then(|start| chrono::DateTime::parse_from_rfc3339(start).ok())
+                            .zip(chrono::DateTime::parse_from_rfc3339(changed).ok())
+                            .is_some_and(|(start, changed)| start >= changed)
+                    });
+                    if !existing || covers_change {
+                        return Ok(status);
+                    }
+                    break;
+                }
+                Some("discovering" | "scanning" | "cancelling") => {}
+                _ => bail!("Audio Integrity scan did not complete: {}", status["phase"]),
+            }
+            if tokio::time::Instant::now() >= deadline {
+                bail!("Audio Integrity scan timed out");
+            }
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            bail!("Audio Integrity scan timed out");
+        }
+    }
 }
 
 impl Evidence {
