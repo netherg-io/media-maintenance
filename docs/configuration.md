@@ -78,6 +78,7 @@ file. Container environment variables take precedence over this file.
 
 Optional `NAVIDROME_URL`, `NAVIDROME_USER`, and `NAVIDROME_PASSWORD` enable a full
 Subsonic rescan after any successful move. This requires an administrator account;
-HTTP and Subsonic errors are recorded and cause a nonzero exit after the report
+Configure Navidrome `Scanner.PurgeMissing=full` or `always` if absent records
+should be removed rather than marked missing. HTTP and Subsonic errors are recorded and cause a nonzero exit after the report
 is saved. Scans are polled for completion for up to one hour. A Dokploy schedule
 may instead run Navidrome's CLI inside its existing container.

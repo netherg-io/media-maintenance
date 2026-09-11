@@ -51,12 +51,13 @@ docker run --rm --name media-maintenance-disk --user 1000:1000 \
   -e DISK_DRY_RUN=false \
   "$image" --env-file /run/maintenance.env disk-cleanup || cleanup_status=$?
 scan_status=0
-docker exec -e ND_SCANNER_PURGEMISSING=full \
-  media-navidrome-dux02d-navidrome-1 /app/navidrome scan --full || scan_status=$?
+docker exec -e ND_SCANNER_PURGEMISSING=always \
+  media-navidrome-dux02d-navidrome-1 /app/navidrome scan || scan_status=$?
 [ "$cleanup_status" -eq 0 ] && [ "$scan_status" -eq 0 ]
 ```
 
-Rescan runs even after a partial cleanup failure. It uses the existing Navidrome
+The incremental rescan purges missing database records without forcing unchanged
+tracks to be re-read. Rescan runs even after a partial cleanup failure. It uses the existing Navidrome
 container without restarting the service or granting administrator privileges to
 an integration account. Its result is retained in the Dokploy schedule log.
 The optional in-process Subsonic integration is an alternative for installations
