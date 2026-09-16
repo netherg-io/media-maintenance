@@ -58,7 +58,8 @@ must finish successfully. `AUDIO_INTEGRITY_TIMEOUT_SECONDS` defaults to 21600.
 `DISK_MUSIC_ROOT`. Only current validator results matching file size and exact
 nanosecond modification time are used. `corrupt` and healthy `likely_lossy`
 results qualify; validation errors never qualify as corruption. The existing
-stale-age and run limits still apply. Lossy authenticity is a heuristic.
+run limits still apply; stale-age applies to corrupt files only, so freshly
+imported transcodes are quarantined too. Lossy authenticity is a heuristic.
 
 Untracked files are report-only unless `DISK_CLEAN_UNTRACKED=true`; this avoids
 moving a file solely because Lidarr does not know it. When enabled, manual-import

@@ -340,7 +340,18 @@ fn classify(
 
     for file in files {
         let key = file.lidarr_path.clone();
-        if file.mtime_ms > stale_before {
+        let integrity_root = PathBuf::from(env_parse(
+            "AUDIO_INTEGRITY_MUSIC_ROOT",
+            String::from("/music"),
+        ));
+        let integrity_path = integrity_root.join(file.source_path.strip_prefix(&cfg.music_root)?);
+        let flagged = evidence
+            .get(&integrity_path.to_string_lossy().to_string())
+            .filter(|item| item.matches(&file.source_path, file.size, file.mtime_ns))
+            .and_then(|item| item.category().map(|category| (item, category)));
+        // Lossy verdicts come from fully decoded files, so a freshly imported
+        // transcode is safe to move; corrupt ones may still be mid-write.
+        if file.mtime_ms > stale_before && !matches!(flagged, Some((_, "audio_likely_lossy"))) {
             records.push(record(
                 cfg,
                 &file,
@@ -354,39 +365,30 @@ fn classify(
             )?);
             continue;
         }
-        let integrity_root = PathBuf::from(env_parse(
-            "AUDIO_INTEGRITY_MUSIC_ROOT",
-            String::from("/music"),
-        ));
-        let integrity_path = integrity_root.join(file.source_path.strip_prefix(&cfg.music_root)?);
-        if let Some(item) = evidence.get(&integrity_path.to_string_lossy().to_string()) {
-            if item.matches(&file.source_path, file.size, file.mtime_ns) {
-                if let Some(category) = item.category() {
-                    let active = active_by_path.get(&key);
-                    let artist_id = active
-                        .and_then(|a| a.get("artistId"))
-                        .and_then(Value::as_i64);
-                    let artist_path = artist_id
-                        .and_then(|x| artists_by_id.get(&x))
-                        .and_then(|a| a.get("path"))
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    records.push(record(
-                        cfg,
-                        &file,
-                        category,
-                        &format!("{}; {}", item.message, item.authenticity_message),
-                        artist_id,
-                        active
-                            .and_then(|a| a.get("albumId"))
-                            .and_then(Value::as_i64),
-                        active.and_then(|a| id(a)),
-                        active.is_some(),
-                        artist_path,
-                    )?);
-                    continue;
-                }
-            }
+        if let Some((item, category)) = flagged {
+            let active = active_by_path.get(&key);
+            let artist_id = active
+                .and_then(|a| a.get("artistId"))
+                .and_then(Value::as_i64);
+            let artist_path = artist_id
+                .and_then(|x| artists_by_id.get(&x))
+                .and_then(|a| a.get("path"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+            records.push(record(
+                cfg,
+                &file,
+                category,
+                &format!("{}; {}", item.message, item.authenticity_message),
+                artist_id,
+                active
+                    .and_then(|a| a.get("albumId"))
+                    .and_then(Value::as_i64),
+                active.and_then(|a| id(a)),
+                active.is_some(),
+                artist_path,
+            )?);
+            continue;
         }
         if let Some(active) = active_by_path.get(&key) {
             let album_id = active.get("albumId").and_then(Value::as_i64);
@@ -753,8 +755,16 @@ mod tests {
         let mut recent = file.clone();
         recent.mtime_ms = chrono::Utc::now().timestamp_millis();
         assert_eq!(
-            classify_file(&cfg, recent, &evidence).category,
+            classify_file(&cfg, recent.clone(), &evidence).category,
             "report_only"
+        );
+        let lossy = evidence.get_mut(&file.lidarr_path).unwrap();
+        lossy.mtime_ns = file.mtime_ns.to_string();
+        lossy.verdict = "healthy".into();
+        lossy.authenticity = "likely_lossy".into();
+        assert_eq!(
+            classify_file(&cfg, recent, &evidence).category,
+            "audio_likely_lossy"
         );
         std::fs::remove_dir_all(cfg.music_root.parent().unwrap()).unwrap();
     }
