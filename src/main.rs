@@ -61,7 +61,8 @@ async fn main() -> Result<()> {
             .truncate(false)
             .write(true)
             .open(dir.join("cleanup.lock"))?;
-        fs2::FileExt::try_lock_exclusive(&file)?;
+        // Wait instead of failing: a manual run or a long incremental scan may hold it.
+        fs2::FileExt::lock_exclusive(&file)?;
         Some(file)
     } else {
         None

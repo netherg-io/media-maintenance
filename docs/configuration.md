@@ -97,9 +97,9 @@ clear pending work from earlier changes.
   wrapper. AudioMuse waits until it succeeds. Do not combine this with the direct
   `NAVIDROME_URL` API integration.
 - `AUDIOMUSE_URL` and `AUDIOMUSE_TOKEN` enable authenticated AudioMuse refresh.
-  Cleaning removes absent server mappings and orphaned catalogue entries, then
-  analysis enumerates all albums (`num_recent_albums=0`) while skipping already
-  analyzed tracks. A running main task causes deferral, never cancellation.
+  Cleaning removes absent server mappings and orphaned catalogue entries; new
+  tracks are left to AudioMuse's native Analysis cron. A running main task causes
+  deferral, never cancellation.
 
 `refresh-after-cleanup integrity`, `refresh-after-cleanup navidrome
 --navidrome-scanned`, and `refresh-after-cleanup audiomuse` advance only pending
@@ -109,5 +109,5 @@ Completed stages save `refresh-<stage>-<run_id>.json` and remove only their mark
 Failed stages retain pending work. Retrying AudioMuse checks its saved task first;
 a failed task clears that ID for a later retry without repeating completed cleaning.
 
-`integrity-scan` runs a standalone incremental scan for the daily schedule and
+`integrity-scan` runs a standalone incremental scan on demand and
 reuses an already-running scan. It does not trigger Navidrome or AudioMuse.
