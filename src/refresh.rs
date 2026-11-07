@@ -43,8 +43,6 @@ struct Pending {
     cleaning_done: bool,
     #[serde(default)]
     cleaning_job: Option<String>,
-    #[serde(default)]
-    analysis_job: Option<String>,
 }
 
 fn marker(dir: &Path, stage: Stage) -> PathBuf {
@@ -93,7 +91,6 @@ fn mark_stage(dir: &Path, run_id: &str, stage: Stage) -> Result<()> {
             changed_at: crate::report::now_iso(),
             cleaning_done: false,
             cleaning_job: None,
-            analysis_job: None,
         },
     )
 }
@@ -132,11 +129,11 @@ pub async fn run(args: RefreshArgs) -> Result<()> {
             if !result? {
                 println!(
                     "{}",
-                    json!({"stage":"audiomuse","status":"pending","cleaning_job":pending.cleaning_job,"analysis_job":pending.analysis_job})
+                    json!({"stage":"audiomuse","status":"pending","cleaning_job":pending.cleaning_job})
                 );
                 return Ok(());
             }
-            json!({"status":"completed","cleaning_job":pending.cleaning_job,"analysis_job":pending.analysis_job})
+            json!({"status":"completed","cleaning_job":pending.cleaning_job})
         }
     };
     let report = json!({"stage":args.stage.name(),"run_id":pending.run_id,"changed_at":pending.changed_at,"response":response});
@@ -215,6 +212,8 @@ async fn enqueue(
     ))
 }
 
+/// Only prunes removed tracks: new tracks are analyzed by AudioMuse's own nightly
+/// Analysis cron, so a few removed files never trigger a whole-library pass.
 async fn advance_audiomuse(
     client: &reqwest::Client,
     base: &str,
@@ -236,19 +235,7 @@ async fn advance_audiomuse(
             return Ok(false);
         }
     }
-    if let Some(id) = &pending.analysis_job {
-        return match job_finished(client, base, id).await? {
-            JobState::Running => Ok(false),
-            JobState::Finished => Ok(true),
-            JobState::Failed(error) => {
-                pending.analysis_job = None;
-                bail!(error);
-            }
-        };
-    }
-    pending.analysis_job =
-        enqueue(client, base, "analysis", json!({"num_recent_albums":0})).await?;
-    Ok(false)
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -266,7 +253,6 @@ mod tests {
             changed_at: "2026-09-11T12:00:00Z".into(),
             cleaning_done: false,
             cleaning_job: None,
-            analysis_job: None,
         }
     }
 
@@ -296,12 +282,6 @@ mod tests {
                 }
                 let mut input = vec![0; length];
                 reader.read_exact(&mut input).unwrap();
-                if expected.contains("analysis/start") {
-                    assert_eq!(
-                        serde_json::from_slice::<Value>(&input).unwrap()["num_recent_albums"],
-                        0
-                    );
-                }
                 if expected.contains("cleaning/start") {
                     assert_eq!(
                         serde_json::from_slice::<Value>(&input).unwrap()["clean_catalogue"],
@@ -321,17 +301,10 @@ mod tests {
             ("POST /api/cleaning/start", 202, json!({"task_id":"clean"})),
             ("GET /api/status/clean", 200, json!({"state":"NEW"})),
             ("GET /api/status/clean", 200, json!({"state":"SUCCESS"})),
-            (
-                "POST /api/analysis/start",
-                202,
-                json!({"task_id":"analysis"}),
-            ),
-            ("GET /api/status/analysis", 200, json!({"state":"RUNNING"})),
-            ("GET /api/status/analysis", 200, json!({"state":"SUCCESS"})),
         ]);
         let client = reqwest::Client::new();
         let mut state = pending();
-        for _ in 0..4 {
+        for _ in 0..2 {
             assert!(!advance_audiomuse(&client, &base, &mut state).await.unwrap());
         }
         assert!(advance_audiomuse(&client, &base, &mut state).await.unwrap());
@@ -359,23 +332,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_analysis_can_retry_without_repeating_successful_cleaning() {
+    async fn failed_cleaning_is_retried_later() {
         let (base, worker) = mock(vec![(
-            "GET /api/status/analysis",
+            "GET /api/status/clean",
             200,
             json!({"state":"FAIL"}),
         )]);
         let mut state = pending();
-        state.cleaning_done = true;
-        state.analysis_job = Some("analysis".into());
+        state.cleaning_job = Some("clean".into());
         assert!(
             advance_audiomuse(&reqwest::Client::new(), &base, &mut state)
                 .await
                 .is_err()
         );
-        assert!(state.analysis_job.is_none());
-        assert!(state.cleaning_done);
+        assert!(state.cleaning_job.is_none());
+        assert!(!state.cleaning_done);
         worker.join().unwrap();
+    }
+
+    #[test]
+    fn markers_from_the_analysis_era_still_load() {
+        let legacy: Pending = serde_json::from_value(json!({
+            "run_id":"old","changed_at":"2026-11-06T00:00:00Z",
+            "cleaning_done":true,"cleaning_job":"clean","analysis_job":"analysis"
+        }))
+        .unwrap();
+        assert!(legacy.cleaning_done);
     }
 
     #[test]
