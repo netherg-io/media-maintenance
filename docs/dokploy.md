@@ -8,15 +8,16 @@ Maintenance containers run as UID/GID 1000. Pin the maintenance image to its Git
 commit, and keep `DISK_DRY_RUN=true` in the environment file; only the cleanup
 wrapper explicitly overrides it.
 
-Install `scripts/dokploy-refresh.sh` on the Docker host as
-`/home/nether/media-maintenance/refresh.sh`. It serializes cleanup and follow-up
-stages with `flock`, limits daily moves to 1,000 files / 50 GiB, and processes
-only durable pending markers. A dry-run or a cleanup with no changes does not
-trigger Integrity, Navidrome, or AudioMuse follow-up work.
+CI publishes `scripts/dokploy-refresh.sh` inside the launcher image
+`ghcr.io/netherg-io/media-maintenance:orchestrator-<commit>`. It serializes cleanup
+and follow-up stages with `flock`, limits daily moves to 1,000 files / 50 GiB, and
+processes only durable pending markers. A dry-run or a cleanup with no changes does
+not trigger Integrity, Navidrome, or AudioMuse follow-up work.
 
-Dokploy runs its server scripts inside its own container, so host files are not
-directly visible to its shell. Use a Docker CLI launcher with the host directory
-and Docker socket mounted; it launches the unprivileged maintenance jobs:
+Dokploy runs its server scripts inside its own container. The launcher gets the
+Docker socket and the host directory with the environment file, data and lock
+(`MAINTENANCE_HOME`, default `/home/nether/media-maintenance`), and starts the
+unprivileged maintenance jobs:
 
 ```sh
 ac=/sys/class/power_supply/AC/online
@@ -25,8 +26,7 @@ docker run --rm --name media-maintenance-orchestrator \
   --mount type=bind,src=/var/run/docker.sock,dst=/var/run/docker.sock \
   --mount type=bind,src=/home/nether/media-maintenance,dst=/home/nether/media-maintenance \
   -e MAINTENANCE_IMAGE=ghcr.io/netherg-io/media-maintenance:REPLACE_WITH_COMMIT \
-  docker@sha256:000bb62ff495f986c9f5578eb67cc2cb98b91138eda81d7762d5371eb8a497fe \
-  sh /home/nether/media-maintenance/refresh.sh cleanup
+  ghcr.io/netherg-io/media-maintenance:orchestrator-REPLACE_WITH_COMMIT cleanup
 ```
 
 Set this schedule to `40 1 * * *`, timezone `Europe/Kyiv`; on battery it skips the night. Enable
